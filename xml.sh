@@ -1,7 +1,84 @@
-#!/bin/bash
+#!/bin/sh
+#sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | sed 's/^/ /' | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed '/^$/d' > "/tmp/xml.tmp"
+
+last_child=""
+
+reconstruct_xml() {
+    local node="$1"
+    local indent="$2"
+
+    if echo "$node" | grep -q ":"; then
+        local tagname=$(echo "$node" | cut -d: -f1)
+    else
+        local tagname="$node"
+    fi
+
+    local check_for_child="$node:"
+    last_child="$tagname"
+
+    if echo "$graph" |  grep -q '^$check_for_child:$'; then
+        local node_start=$(echo "$node" | grep -oP '^[^:]*' | sed 's/\[/ ;s/\]//')
+        local text_content=$(echo "$node" | grep -oP '(?<=_text=")[^"]*(?=")')
+        local node_end=$(echo "$node" | sed 's/\[.*//')
+        # Print the opening tag
+        printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
+        #echo -e "$indent<$node_start>$text_content</$node_end>\n"
+    else
+        printf "am ajuns aici\n"
+        if echo "$node" | grep -q ":"; then
+            local tagname=$(echo "$node" | cut -d: -f1)
+        else
+            local tagname="$node"
+        fi
+        printf "%s<%s>\n" "$indent" "$tagname"
+        #echo -e "$indent<$tagname>\n"
+        # Get the children of the current node
+        #local children=$(echo "$graph" | grep "^$node" | cut -d: -f2-)
+        #local children=$(echo "$node" | grep -P '(?<=: )[^\s]+\[[^\]]*\]')
+        #children=$(echo "$node" | grep -oP '(?<=: )[^\s]+\[[^\]]*\](?:\s+[^\s]+\[[^\]]*\])*' | tr ' ' '\n')
+        #children=$(echo "$node" | grep -oP '[^\s:]+\[.*?\]')
+        #children=$(echo "$children" | sed 's/ /\n/g')
+        printf "node: %s\n" "$node"
+        #check_for_children=$(echo "$node" | grep "^$node_start:.*")
+        children=$(echo "$node" | sed 's/^.*://')
+        printf "%s\n" "$check_for_children"
+        printf "am dat check la children\n"
+        #echo -e "$children\n"
+
+        # Traverse each child
+        #for child in $children; do
+        #    reconstruct_xml "$child" "  $indent"
+        #done
+
+        #echo "$children" | while IFS= read -r child; do
+        #    reconstruct_xml "$child" "    $indent"
+        #done;
+        while echo "$children" | grep -qP '[^\s]+\[.*?\]'; do
+            # Extract the first match
+            element=$(echo "$input" | grep -oP '[^\s]+\[.*?\]' | head -n1)
+
+            # Remove the matched element from the input string
+            children=$(echo "$children" | sed "s/$(printf '%s' "$element" | sed 's/[][\&\/]/\\&/g')//" | sed 's/^ *//;s/ *$//')
+
+            # Process the element
+            printf "Processing: %s\n" "$element"
+
+            reconstruct_xml "$element" "    $indent"
+
+            # Extract child name and properties
+            #child_name=$(echo "$element" | grep -oP '^[^\[]+')
+            #properties=$(echo "$element" | grep -oP '\[.*?\]' | sed 's/^\[//;s/\]$//')
+
+            #echo "Child: $child_name"
+            #echo "Properties: $properties"
+        done
+        local node_end=$(echo "$node" | sed 's/\[.*//')
+        # Print the closing tag
+        printf "%s</%s>\n" "$indent" "$node_end"
+    fi
+}
 
 sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed '/^$/d' > "/tmp/xml.tmp"
-
 graph=""
 stack=""
 
@@ -49,51 +126,72 @@ while IFS= read -r line; do
 	fi
 done < "/tmp/xml.tmp"
 
-echo -e "$graph\n\n"
+echo "$graph"
+printf "\n"
 
-echo "$graph" | tac > "/tmp/xml_reversed.tmp"
+graph_numbered=$(echo "$graph" | nl -s ":" -n ln -w 1)
 
-echo "" > "/tmp/xml_reconstructed.tmp"
+#echo -e "$graph_numbered\n\n"
 
-cat "/tmp/xml_reversed.tmp" | grep -P ":$" > "/tmp/xml_test.tmp"
+line_number="1"
+root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2-)
+reconstruct_xml "$root_child" ""
 
-while IFS= read -r line; do
-	if echo "$line" | grep -Pq ":$"; then
-		tagname=$(echo "$line" | grep -Po '^[^[]*(?=\[)')
-		attributes=$(echo "$line" | grep -Po '(?<=\[)[^]]*(?= _)')
-		text=$(echo "$line" | grep -Po '(?<=_text=")[^"]*(?=")')
-		if [ -n "$attributes" ]; then
-			echo "<$tagname $attributes>$text</$tagname>" | cat - "/tmp/xml_reconstructed.tmp" > "/tmp/xml_temporary.tmp" && mv "/tmp/xml_temporary.tmp" "/tmp/xml_reconstructed.tmp"
-		else
-			echo "<$tagname>$text</$tagname>" | cat - "/tmp/xml_reconstructed.tmp" > "/tmp/xml_temporary.tmp" && mv "/tmp/xml_temporary.tmp" "/tmp/xml_reconstructed.tmp"
-		fi
-	else
-		children=$(echo "$line" | grep -Po '(?<=:).*')
-		tagname=$(echo "$line" | grep -Po '^[^[]*(?=\[)')
-		attributes=$(echo "$line" | grep -Po '(?<=\[)[^]]*(?= _)')
-		children=$(echo "$children" | sed 's/\([^[ ]*\[[^]]*\]\)/\1\n/g' | sed 's/^[ \t]*//;s/[ \t]*$//')
-		firstChild=$(echo "$children" | head -n 1 | grep -Po '^[^[]*(?=\[)')
-		lastChild=$(echo "$children" | tail -n 1 | grep -Po '^[^[]*(?=\[)')
-		firstChildLineNumber=$(grep -n "$firstChild" "/tmp/xml_reconstructed.tmp" | cut -d: -f1 )
-		lastChildLineNumber=$(grep -n "$lastChild" "/tmp/xml_reconstructed.tmp" | cut -d: -f1)
-		temp=$((lastChildLineNumber + 1))
-		lastChildLineNumber="$temp"
-		#echo "$firstChildLineNumber $lastChildLineNumber"
-		#echo "$firstChild $lastChild"
-		#firstChildLine_escaped=$(echo "$firstChildLine" | sed 's/[][\\]/\\&/g')
-		#lastChildLine_escaped=$(echo "$lastChildLine" | sed 's/[][\\]/\\&/g')
-		attributes_escaped=$(echo "$attributes" | sed 's/"/\\"/g')
-		#echo "$attributes_escaped"
+# while echo "$graph_numbered" | grep -q "^$line_number"; do
+#     last_child=""
+#     root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2-)
+#     reconstruct_xml "$root_child" ""
+#     line_number=$(echo "$graph_numbered" | grep "^$last_child" | cut -d: -f1)
+#     temp=$(($line_number + 1))
+#     line_number="$temp"
+# done
 
-		if [ -n "$attributes_escaped" ]; then
-			sed -e "${firstChildLineNumber} i\\<$tagname $attributes_escaped>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
-			sed -e "${lastChildLineNumber} a\\</$tagname>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
-		else
-			sed "$firstChildLineNumber i\\<$tagname>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
-			sed "$lastChildLineNumber a\\</$tagname>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
-		fi
-	fi
 
-done < "/tmp/xml_reversed.tmp"
+# Recursive function to traverse the graph and reconstruct the XML
 
-cat "/tmp/xml_reconstructed.tmp"
+# echo "$graph" | tac > "/tmp/xml_reversed.tmp"
+# 
+# echo "" > "/tmp/xml_reconstructed.tmp"
+# 
+# cat "/tmp/xml_reversed.tmp" | grep -P ":$" > "/tmp/xml_test.tmp"
+# 
+# while IFS= read -r line; do
+# 	if echo "$line" | grep -Pq ":$"; then
+# 		tagname=$(echo "$line" | grep -Po '^[^[]*(?=\[)')
+# 		attributes=$(echo "$line" | grep -Po '(?<=\[)[^]]*(?= _)')
+# 		text=$(echo "$line" | grep -Po '(?<=_text=")[^"]*(?=")')
+# 		if [ -n "$attributes" ]; then
+# 			echo "<$tagname $attributes>$text</$tagname>" | cat - "/tmp/xml_reconstructed.tmp" > "/tmp/xml_temporary.tmp" && mv "/tmp/xml_temporary.tmp" "/tmp/xml_reconstructed.tmp"
+# 		else
+# 			echo "<$tagname>$text</$tagname>" | cat - "/tmp/xml_reconstructed.tmp" > "/tmp/xml_temporary.tmp" && mv "/tmp/xml_temporary.tmp" "/tmp/xml_reconstructed.tmp"
+# 		fi
+# 	else
+# 		children=$(echo "$line" | grep -Po '(?<=:).*')
+# 		tagname=$(echo "$line" | grep -Po '^[^[]*(?=\[)')
+# 		attributes=$(echo "$line" | grep -Po '(?<=\[)[^]]*(?= _)')
+# 		children=$(echo "$children" | sed 's/\([^[ ]*\[[^]]*\]\)/\1\n/g' | sed 's/^[ \t]*//;s/[ \t]*$//')
+# 		firstChild=$(echo "$children" | head -n 1 | grep -Po '^[^[]*(?=\[)')
+# 		lastChild=$(echo "$children" | tail -n 1 | grep -Po '^[^[]*(?=\[)')
+# 		firstChildLineNumber=$(grep -n "$firstChild" "/tmp/xml_reconstructed.tmp" | cut -d: -f1 )
+# 		lastChildLineNumber=$(grep -n "$lastChild" "/tmp/xml_reconstructed.tmp" | cut -d: -f1)
+# 		temp=$((lastChildLineNumber + 1))
+# 		lastChildLineNumber="$temp"
+# 		#echo "$firstChildLineNumber $lastChildLineNumber"
+# 		#echo "$firstChild $lastChild"
+# 		#firstChildLine_escaped=$(echo "$firstChildLine" | sed 's/[][\\]/\\&/g')
+# 		#lastChildLine_escaped=$(echo "$lastChildLine" | sed 's/[][\\]/\\&/g')
+# 		attributes_escaped=$(echo "$attributes" | sed 's/"/\\"/g')
+# 		#echo "$attributes_escaped"
+# 
+# 		if [ -n "$attributes_escaped" ]; then
+# 			sed -e "${firstChildLineNumber} i\\<$tagname $attributes_escaped>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
+# 			sed -e "${lastChildLineNumber} a\\</$tagname>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
+# 		else
+# 			sed "$firstChildLineNumber i\\<$tagname>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
+# 			sed "$lastChildLineNumber a\\</$tagname>" /tmp/xml_reconstructed.tmp > /tmp/xml_temporary.tmp && mv /tmp/xml_temporary.tmp /tmp/xml_reconstructed.tmp
+# 		fi
+# 	fi
+# 
+# done < "/tmp/xml_reversed.tmp"
+# 
+# cat "/tmp/xml_reconstructed.tmp"
