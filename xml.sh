@@ -13,23 +13,33 @@ reconstruct_xml() {
         local tagname="$node"
     fi
 
+    #printf "tagname: %s\n" "$tagname"
+
     local check_for_child="$node:"
+    #printf "%s\n" "$check_for_child"
     last_child="$tagname"
 
-    if echo "$graph" |  grep -q '^$check_for_child:$'; then
-        local node_start=$(echo "$node" | grep -oP '^[^:]*' | sed 's/\[/ ;s/\]//')
+    #printf "%s\n" "$graph"
+
+    #printf "node: %s\n" "$node"
+	local escaped_check_for_child=$(echo "$check_for_child" | sed 's/[][\\]/\\&/g')
+
+    if echo "$graph" | grep -q "^$escaped_check_for_child$"; then
+        local node_start=$(echo "$node" | grep -oP '^[^:]*')
+        node_start=$(echo "$node_start" | sed 's/ _text="[^"]*"//; s/\[\]//; s/\[/ /; s/\]//')
         local text_content=$(echo "$node" | grep -oP '(?<=_text=")[^"]*(?=")')
         local node_end=$(echo "$node" | sed 's/\[.*//')
         # Print the opening tag
         printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
         #echo -e "$indent<$node_start>$text_content</$node_end>\n"
     else
-        printf "am ajuns aici\n"
+        #printf "am ajuns aici\n"
         if echo "$node" | grep -q ":"; then
             local tagname=$(echo "$node" | cut -d: -f1)
         else
             local tagname="$node"
         fi
+        tagname=$(echo "$tagname" | sed 's/\[\]//; s/\[/ /; s/\]//')
         printf "%s<%s>\n" "$indent" "$tagname"
         #echo -e "$indent<$tagname>\n"
         # Get the children of the current node
@@ -38,11 +48,13 @@ reconstruct_xml() {
         #children=$(echo "$node" | grep -oP '(?<=: )[^\s]+\[[^\]]*\](?:\s+[^\s]+\[[^\]]*\])*' | tr ' ' '\n')
         #children=$(echo "$node" | grep -oP '[^\s:]+\[.*?\]')
         #children=$(echo "$children" | sed 's/ /\n/g')
-        printf "node: %s\n" "$node"
-        #check_for_children=$(echo "$node" | grep "^$node_start:.*")
-        children=$(echo "$node" | sed 's/^.*://')
-        printf "%s\n" "$check_for_children"
-        printf "am dat check la children\n"
+        #printf "node: %s\n" "$node"
+	    local escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
+        local check_for_children=$(echo "$graph" | grep "^$escaped_node:.*")
+        #local children=$(echo "$check_for_children" | sed 's/^.*://' | sed 's/\] /\]\n/g' )
+        local children=$(echo "$check_for_children" | sed 's/^.*://')
+        #printf "children: %s\n" "$children"
+        #printf "am dat check la children\n"
         #echo -e "$children\n"
 
         # Traverse each child
@@ -54,14 +66,16 @@ reconstruct_xml() {
         #    reconstruct_xml "$child" "    $indent"
         #done;
         while echo "$children" | grep -qP '[^\s]+\[.*?\]'; do
+        #echo "$children" | while IFS= read -r child; do
             # Extract the first match
-            element=$(echo "$input" | grep -oP '[^\s]+\[.*?\]' | head -n1)
+            element=$(echo "$children" | grep -oP '[^\s]+\[.*?\]' | head -n1)
+            #printf "element: %s\n" "$element"
 
             # Remove the matched element from the input string
             children=$(echo "$children" | sed "s/$(printf '%s' "$element" | sed 's/[][\&\/]/\\&/g')//" | sed 's/^ *//;s/ *$//')
 
             # Process the element
-            printf "Processing: %s\n" "$element"
+            #printf "Processing: %s\n" "$element"
 
             reconstruct_xml "$element" "    $indent"
 
@@ -133,18 +147,27 @@ graph_numbered=$(echo "$graph" | nl -s ":" -n ln -w 1)
 
 #echo -e "$graph_numbered\n\n"
 
-line_number="1"
-root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2-)
-reconstruct_xml "$root_child" ""
+# test_var='pula[grosime="enorma" _text="tare si mare"]:'
+# 
+# escaped_node=$(echo "$test_var" | sed 's/[][\\]/\\&/g')
+# 
+# echo "$graph" | grep "$escaped_node"
 
-# while echo "$graph_numbered" | grep -q "^$line_number"; do
-#     last_child=""
-#     root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2-)
-#     reconstruct_xml "$root_child" ""
-#     line_number=$(echo "$graph_numbered" | grep "^$last_child" | cut -d: -f1)
-#     temp=$(($line_number + 1))
-#     line_number="$temp"
-# done
+line_number="1"
+# root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2)
+# printf "root_child: %s\n" "$root_child"
+# reconstruct_xml "$root_child" ""
+
+while echo "$graph_numbered" | grep -q "^$line_number"; do
+    last_child=""
+    root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2)
+    reconstruct_xml "$root_child" ""
+    #printf "last_child: %s\n" "$last_child"
+	escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
+    line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
+    temp=$(($line_number + 1))
+    line_number="$temp"
+done
 
 
 # Recursive function to traverse the graph and reconstruct the XML
