@@ -92,6 +92,8 @@ reconstruct_xml() {
     fi
 }
 
+#main
+
 sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed '/^$/d' > "/tmp/xml.tmp"
 graph=""
 stack=""
@@ -101,6 +103,9 @@ while IFS= read -r line; do
 	sc=$(echo "$line" | cut -c2)
 
 	if [ "$fc" = "<" ]; then
+        if [ "$sc" = "!" ]; then
+            continue
+        fi
 		if [ "$sc" = "/" ]; then
 			stack=$(echo "$stack" | sed 's/\(.*\) _.*$/\1/')
 		else
