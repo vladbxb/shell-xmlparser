@@ -94,7 +94,7 @@ reconstruct_xml() {
 
 #main
 
-sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed '/^$/d' | sed ':a; /<!--/,/-->/ { /-->/!{N;ba}; s/<!--.*?-->//g }' > "/tmp/xml.tmp"
+sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed -e 's/<!--.*-->//g' | sed '/^$/d' > "/tmp/xml.tmp"
 graph=""
 stack=""
 
