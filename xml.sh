@@ -23,16 +23,8 @@ reconstruct_xml() {
 
     #printf "node: %s\n" "$node"
 	local escaped_check_for_child=$(echo "$check_for_child" | sed 's/[][\\]/\\&/g')
-    local fc=$(echo "$node" | cut -c1)
-
 
     if echo "$graph" | grep -q "^$escaped_check_for_child$"; then
-        if [ "$fc" = "?" ]; then
-            local node_start=$(echo "$node" | grep -oP '^[^:]*')
-            node_start=$(echo "$node_start" | sed 's/ _text="[^"]*"//; s/\[\]//; s/\[/ /; s/\]//')
-            printf "%s<%s>\n" "$indent" "$node_start" 
-            return
-        else
         local node_start=$(echo "$node" | grep -oP '^[^:]*')
         node_start=$(echo "$node_start" | sed 's/ _text="[^"]*"//; s/\[\]//; s/\[/ /; s/\]//')
         local text_content=$(echo "$node" | grep -oP '(?<=_text=")[^"]*(?=")')
@@ -40,7 +32,6 @@ reconstruct_xml() {
         # Print the opening tag
         printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
         #echo -e "$indent<$node_start>$text_content</$node_end>\n"
-        fi
     else
         #printf "am ajuns aici\n"
         if echo "$node" | grep -q ":"; then
@@ -95,17 +86,13 @@ reconstruct_xml() {
             #echo "Child: $child_name"
             #echo "Properties: $properties"
         done
-        if [ "$fc" != "?" ]; then
-            local node_end=$(echo "$node" | sed 's/\[.*//')
-            # Print the closing tag
-            printf "%s</%s>\n" "$indent" "$node_end"
-        fi
+        local node_end=$(echo "$node" | sed 's/\[.*//')
+        # Print the closing tag
+        printf "%s</%s>\n" "$indent" "$node_end"
     fi
 }
 
-#main
-
-sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed -e 's/<!--.*-->//g' | sed '/^$/d' > "/tmp/xml.tmp"
+sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr -d '\n' | sed -e 's/>/&\n/g' -e 's/</\n&/g' | sed '/^$/d' > "/tmp/xml.tmp"
 graph=""
 stack=""
 
@@ -139,13 +126,12 @@ while IFS= read -r line; do
 				graph=$(echo "$graph"; echo "$element:")
 			fi
 
-            if [ "$sc" != "?" ]; then
-			    if [ -z "$stack" ]; then
-				    stack="$stack _$element"
-			    else
-				    stack="$stack _$element"
-			    fi
-            fi
+
+			if [ -z "$stack" ]; then
+				stack="$stack _$element"
+			else
+				stack="$stack _$element"
+			fi
 		fi
 	else
 		text=" _text=\"$line\""
@@ -175,23 +161,12 @@ line_number="1"
 while echo "$graph_numbered" | grep -q "^$line_number"; do
     last_child=""
     root_child=$(echo "$graph_numbered" | grep "^$line_number" | cut -d: -f2)
-    fc=$(echo "$root_child" | cut -c1)
-    if [ "$fc" = "?" ]; then
-            node_start=$(echo "$root_child" | grep -oP '^[^:]*')
-            node_start=$(echo "$node_start" | sed 's/ _text="[^"]*"//; s/\[\]//; s/\[/ /; s/\]//')
-            printf "<%s>\n" "$node_start" 
-            temp=$(($line_number + 1))
-            line_number="$temp"
-    else
-        reconstruct_xml "$root_child" ""
-        #printf "last_child: %s\n" "$last_child"
-	    escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
-        line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
-        #echo "line_number: '$line_number'"
-        temp=$(($line_number + 1))
-        line_number="$temp"
-    fi
-    
+    reconstruct_xml "$root_child" ""
+    #printf "last_child: %s\n" "$last_child"
+	escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
+    line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
+    temp=$(($line_number + 1))
+    line_number="$temp"
 done
 
 
