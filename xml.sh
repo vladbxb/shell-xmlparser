@@ -23,6 +23,8 @@ remove_metatags() {
     echo "$cleaned_element"
 }
 
+    
+
 reconstruct_xml() {
     local node="$1"
     local indent="$2"
@@ -154,8 +156,6 @@ serial="1"
             fi
         else
             text="_text=\"$line\""
-            text=$(echo "$text" | sed -e 's/&amp;/\&/g' -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' -e "s/&apos;/'/g")
-
             #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
             add_property "$element" "$text" "$graph"
             #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
