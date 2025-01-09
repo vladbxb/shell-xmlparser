@@ -2,6 +2,35 @@
 
 last_child=""
 
+file_checker()
+{
+FILE="$1"
+
+# Check if the file exists
+if [ ! -e "$FILE" ]; then
+    echo "Error: Fisierul nu exista"
+    exit
+fi
+
+# Check if the path is a file (not a directory or other type)
+if [ ! -f "$FILE" ]; then
+    echo "Error: Path-ul nu e un fisier valid."
+    exit
+fi
+
+# Check if the file has read permissions
+if [ ! -r "$FILE" ]; then
+    echo "Error: Fisierul nu poate fi citit."
+    exit
+fi
+
+# Check if the file is not empty
+if [ ! -s "$FILE" ]; then
+    echo "Error: Fisierul este gol."
+    exit
+fi
+}
+
 add_property() {
     # $1 - elementul in care sa adauge
     # $2 - proprietatea pe care sa o adauge ( proprietate + atribut (daca exista) )
@@ -116,6 +145,8 @@ pre_process() {
 
 input_file="$1"
 
+file_checker "$input_file"
+
 pre_process "$input_file" > /tmp/pre_processed_xml.tmp
 
 
@@ -179,57 +210,6 @@ while IFS= read -r line; do
     fi
 done < "/tmp/pre_processed_xml.tmp"
 
-## fosta parsare
-# while IFS= read -r line; do
-#     fc=$(echo "$line" | cut -c1)
-#     sc=$(echo "$line" | cut -c2)
-#     if [ "$fc" = "<" ]; then
-#         if [ "$sc" = "/" ]; then
-#             #stack=$(echo "$stack" | sed 's/\(.*\) _.*$/\1/')
-#             stack=$(echo "$stack" | sed 's/\(.*\) @.*$/\1/')
-#         else
-#             lsc=$(echo "$line" | rev | cut -c2)
-#             tagname=$(echo "$line" | grep -Po '(?<=<)[^ >/]+')
-#             attributes=$(echo "$line" | grep -Po '(?<= )[^\n>]+')
-#             if [ "$lsc" = "/" ]; then
-#                 element="$tagname[_$serial _self $attributes]"
-#             else
-#                 element="$tagname[_$serial $attributes]"
-#             fi
-#             temp=$(($serial + 1))
-#             serial="$temp"
-#             if [ -z "$graph" ]; then
-#                 graph="$element:"
-#             elif [ -n "$stack" ]; then
-#                 #parent=$(echo "$stack" | sed 's/.*_//')
-#                 parent=$(echo "$stack" | sed 's/.*@//')
-#                 #echo "parent is $parent"
-#                 if [ -z "$parent" ]; then
-#                     break
-#                 else
-#                     escaped_parent=$(echo "$parent" | sed 's/[][\\]/\\&/g')
-#                     escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
-#                     graph=$(echo "$graph" | sed "s/^$escaped_parent:.*/& $escaped_element/")
-#                     graph=$(echo "$graph"; echo "$element:")
-#                 fi
-#             else
-#                 graph=$(echo "$graph"; echo "$element:")
-#             fi
-#
-#
-#             #stack="$stack _$element"
-#             if [ "$lsc" != "/" ]; then
-#                 stack="$stack @$element"
-#             fi
-#             #echo "stack is $stack"
-#         fi
-#     else
-#         text="_text=\"$line\""
-#         #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
-#         add_property "$element" "$text" "$graph"
-#         #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
-#     fi
-# done < "/tmp/pre_processed_xml.tmp"
 
 printf "%s\n" "$graph"
 
