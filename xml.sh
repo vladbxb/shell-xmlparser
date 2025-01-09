@@ -9,7 +9,7 @@ add_property() {
 	local escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
     local property="$2"
     local property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
-    local escaped_property=$(echo "$property" | sed 's/[][\\]/\\&/g')
+    local escaped_property=$(echo "$property" | sed 's/[\\&"]/\\&/g')
     graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1 $escaped_property]/")
 }
 
@@ -37,6 +37,7 @@ remove_metatags() {
     if echo "$1" | grep -q '\[[^]]*_question[^]]*\]'; then
         cleaned_element=$(echo "$cleaned_element" | sed 's/_question//g')
     fi
+    cleaned_element=$(echo "$cleaned_element" | sed -E 's/_text=".*"/_text=""/g')
     cleaned_element=$(echo "$cleaned_element" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
 
 
@@ -74,7 +75,8 @@ reconstruct_xml() {
             printf "%s<?%s?>\n" "$indent" "$node_start"
         else
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
-            local text_content=$(echo "$node" | grep -oP '(?<=_text=")[^"]*(?=")')
+            local text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
+            text_content=$(echo "$text_content" | sed 's/\\&/\&amp;/g; s/\\</\&lt;/g; s/\\>/\&gt;/g; s/\\"/\&quot;/g; s/\\'\''/\&apos;/g')
             local node_end=$(echo "$node" | sed 's/\[.*//')
             printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
         fi
@@ -139,7 +141,6 @@ while IFS= read -r line; do
             #    is_processing="true"
             #else
                 tagname=$(echo "$line" | sed 's/^\([^ \t]*\).*/\1/')
-               
                 attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
                 if [ "$lc" = "/" ]; then
                     attributes=$(echo "$attributes" | sed 's/\/$//')
@@ -171,6 +172,7 @@ while IFS= read -r line; do
             fi
     elif [ "$element_open" = "true" ] && [ "$tag_open" = "false" ]; then
          text="_text=\"$line\""
+         text=$(echo "$text" | sed -e 's/&amp;/\\\&/g' -e 's/&lt;/\\</g' -e 's/&gt;/\\>/g' -e 's/&quot;/\\\"/g' -e "s/&apos;/\\\'/g")
          #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
          add_property "$element" "$text"
          #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
