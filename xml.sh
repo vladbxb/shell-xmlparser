@@ -30,7 +30,16 @@ remove_metatags() {
     #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/[ \t]*$//')
     #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/^[ \t]*//;s/[ \t]*$//')
     #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/^[ \t]*//;s/[ \t]*$//')
-    cleaned_element=$(echo "$1" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
+    cleaned_element="$1"
+    if echo "$1" | grep -q '\[[^]]*_self[^]]*\]'; then
+        cleaned_element=$(echo "$cleaned_element" | sed 's/_self//g')
+    fi
+    if echo "$1" | grep -q '\[[^]]*_question[^]]*\]'; then
+        cleaned_element=$(echo "$cleaned_element" | sed 's/_question//g')
+    fi
+    cleaned_element=$(echo "$cleaned_element" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
+
+
     echo "$cleaned_element"
 }
 
@@ -59,6 +68,10 @@ reconstruct_xml() {
         if echo "$node_start" | grep -q '\[[^]]*_self[^]]*\]'; then
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             printf "%s<%s/>\n" "$indent" "$node_start"
+        elif echo "$node_start" | grep -q '\[[^]]*_question[^]]*\]'; then
+            echo "$node_start"
+            node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
+            printf "%s<?%s?>\n" "$indent" "$node_start"
         else
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             local text_content=$(echo "$node" | grep -oP '(?<=_text=")[^"]*(?=")')
@@ -90,7 +103,8 @@ reconstruct_xml() {
 
 pre_process() {
 	#normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
-	normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
+	#normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
+    normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
     echo "$normalized_data"
 
 }
@@ -125,14 +139,15 @@ while IFS= read -r line; do
             #    is_processing="true"
             #else
                 tagname=$(echo "$line" | sed 's/^\([^ \t]*\).*/\1/')
-                #if [ "$is_processing" = "true" ]; then
-                #    tagname=$(echo "$line" | sed 's/^\([^?]*\).*/\1/')
-                #fi
+               
                 attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
                 if [ "$lc" = "/" ]; then
+                    attributes=$(echo "$attributes" | sed 's/\/$//')
                     element="$tagname[_$serial _self $attributes]"
-                #elif [ "$is_processing" = "true" ]; then
-                #    element="$tagname[_$serial _question $attributes]"
+                elif [ "$lc" = "?" ]; then
+                    tagname=$(echo "$tagname" | sed 's/^?//')
+                    attributes=$(echo "$attributes" | sed 's/?$//')
+                    element="$tagname[_$serial _question $attributes]"
                 else
                     element="$tagname[_$serial $attributes]"
                 fi
