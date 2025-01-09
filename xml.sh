@@ -2,6 +2,35 @@
 
 last_child=""
 
+file_checker()
+{
+FILE="$1"
+
+# Check if the file exists
+if [ ! -e "$FILE" ]; then
+    echo "Error: Fisierul nu exista"
+    exit
+fi
+
+# Check if the path is a file (not a directory or other type)
+if [ ! -f "$FILE" ]; then
+    echo "Error: Path-ul nu e un fisier valid."
+    exit
+fi
+
+# Check if the file has read permissions
+if [ ! -r "$FILE" ]; then
+    echo "Error: Fisierul nu poate fi citit."
+    exit
+fi
+
+# Check if the file is not empty
+if [ ! -s "$FILE" ]; then
+    echo "Error: Fisierul este gol."
+    exit
+fi
+}
+
 add_property() {
     # $1 - elementul in care sa adauge
     # $2 - proprietatea pe care sa o adauge ( proprietate + atribut (daca exista) )
@@ -9,7 +38,7 @@ add_property() {
 	local escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
     local property="$2"
     local property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
-    local escaped_property=$(echo "$property" | sed 's/[][\\]/\\&/g')
+    local escaped_property=$(echo "$property" | sed 's/[\\&"]/\\&/g')
     graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1 $escaped_property]/")
 }
 
@@ -30,7 +59,17 @@ remove_metatags() {
     #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/[ \t]*$//')
     #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/^[ \t]*//;s/[ \t]*$//')
     #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/^[ \t]*//;s/[ \t]*$//')
-    cleaned_element=$(echo "$1" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
+    cleaned_element="$1"
+    if echo "$1" | grep -q '\[[^]]*_self[^]]*\]'; then
+        cleaned_element=$(echo "$cleaned_element" | sed 's/_self//g')
+    fi
+    if echo "$1" | grep -q '\[[^]]*_question[^]]*\]'; then
+        cleaned_element=$(echo "$cleaned_element" | sed 's/_question//g')
+    fi
+    cleaned_element=$(echo "$cleaned_element" | sed -E 's/_text=".*"/_text=""/g')
+    cleaned_element=$(echo "$cleaned_element" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
+
+
     echo "$cleaned_element"
 }
 
@@ -59,9 +98,14 @@ reconstruct_xml() {
         if echo "$node_start" | grep -q '\[[^]]*_self[^]]*\]'; then
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             printf "%s<%s/>\n" "$indent" "$node_start"
+        elif echo "$node_start" | grep -q '\[[^]]*_question[^]]*\]'; then
+            echo "$node_start"
+            node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
+            printf "%s<?%s?>\n" "$indent" "$node_start"
         else
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
-            local text_content=$(echo "$node" | grep -oP '(?<=_text=")[^"]*(?=")')
+            local text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
+            text_content=$(echo "$text_content" | sed 's/\\&/\&amp;/g; s/\\</\&lt;/g; s/\\>/\&gt;/g; s/\\"/\&quot;/g; s/\\'\''/\&apos;/g')
             local node_end=$(echo "$node" | sed 's/\[.*//')
             printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
         fi
@@ -90,7 +134,8 @@ reconstruct_xml() {
 
 pre_process() {
 	#normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
-	normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
+	#normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
+    normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
     echo "$normalized_data"
 
 }
@@ -99,6 +144,8 @@ pre_process() {
 
 
 input_file="$1"
+
+file_checker "$input_file"
 
 pre_process "$input_file" > /tmp/pre_processed_xml.tmp
 
@@ -125,14 +172,14 @@ while IFS= read -r line; do
             #    is_processing="true"
             #else
                 tagname=$(echo "$line" | sed 's/^\([^ \t]*\).*/\1/')
-                #if [ "$is_processing" = "true" ]; then
-                #    tagname=$(echo "$line" | sed 's/^\([^?]*\).*/\1/')
-                #fi
                 attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
                 if [ "$lc" = "/" ]; then
+                    attributes=$(echo "$attributes" | sed 's/\/$//')
                     element="$tagname[_$serial _self $attributes]"
-                #elif [ "$is_processing" = "true" ]; then
-                #    element="$tagname[_$serial _question $attributes]"
+                elif [ "$lc" = "?" ]; then
+                    tagname=$(echo "$tagname" | sed 's/^?//')
+                    attributes=$(echo "$attributes" | sed 's/?$//')
+                    element="$tagname[_$serial _question $attributes]"
                 else
                     element="$tagname[_$serial $attributes]"
                 fi
@@ -156,63 +203,13 @@ while IFS= read -r line; do
             fi
     elif [ "$element_open" = "true" ] && [ "$tag_open" = "false" ]; then
          text="_text=\"$line\""
+         text=$(echo "$text" | sed -e 's/&amp;/\\\&/g' -e 's/&lt;/\\</g' -e 's/&gt;/\\>/g' -e 's/&quot;/\\\"/g' -e "s/&apos;/\\\'/g")
          #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
          add_property "$element" "$text"
          #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
     fi
 done < "/tmp/pre_processed_xml.tmp"
 
-## fosta parsare
-# while IFS= read -r line; do
-#     fc=$(echo "$line" | cut -c1)
-#     sc=$(echo "$line" | cut -c2)
-#     if [ "$fc" = "<" ]; then
-#         if [ "$sc" = "/" ]; then
-#             #stack=$(echo "$stack" | sed 's/\(.*\) _.*$/\1/')
-#             stack=$(echo "$stack" | sed 's/\(.*\) @.*$/\1/')
-#         else
-#             lsc=$(echo "$line" | rev | cut -c2)
-#             tagname=$(echo "$line" | grep -Po '(?<=<)[^ >/]+')
-#             attributes=$(echo "$line" | grep -Po '(?<= )[^\n>]+')
-#             if [ "$lsc" = "/" ]; then
-#                 element="$tagname[_$serial _self $attributes]"
-#             else
-#                 element="$tagname[_$serial $attributes]"
-#             fi
-#             temp=$(($serial + 1))
-#             serial="$temp"
-#             if [ -z "$graph" ]; then
-#                 graph="$element:"
-#             elif [ -n "$stack" ]; then
-#                 #parent=$(echo "$stack" | sed 's/.*_//')
-#                 parent=$(echo "$stack" | sed 's/.*@//')
-#                 #echo "parent is $parent"
-#                 if [ -z "$parent" ]; then
-#                     break
-#                 else
-#                     escaped_parent=$(echo "$parent" | sed 's/[][\\]/\\&/g')
-#                     escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
-#                     graph=$(echo "$graph" | sed "s/^$escaped_parent:.*/& $escaped_element/")
-#                     graph=$(echo "$graph"; echo "$element:")
-#                 fi
-#             else
-#                 graph=$(echo "$graph"; echo "$element:")
-#             fi
-#
-#
-#             #stack="$stack _$element"
-#             if [ "$lsc" != "/" ]; then
-#                 stack="$stack @$element"
-#             fi
-#             #echo "stack is $stack"
-#         fi
-#     else
-#         text="_text=\"$line\""
-#         #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
-#         add_property "$element" "$text" "$graph"
-#         #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
-#     fi
-# done < "/tmp/pre_processed_xml.tmp"
 
 printf "%s\n" "$graph"
 
