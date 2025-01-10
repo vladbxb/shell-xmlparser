@@ -4,31 +4,27 @@ last_child=""
 
 file_checker()
 {
-FILE="$1"
+    FILE="$1"
 
-# Check if the file exists
-if [ ! -e "$FILE" ]; then
-    echo "Error: Fisierul nu exista"
-    exit
-fi
+    if [ ! -e "$FILE" ]; then
+        echo "Error: File not found."
+        exit
+    fi
 
-# Check if the path is a file (not a directory or other type)
-if [ ! -f "$FILE" ]; then
-    echo "Error: Path-ul nu e un fisier valid."
-    exit
-fi
+    if [ ! -f "$FILE" ]; then
+        echo "Error: Path is not a file."
+        exit
+    fi
 
-# Check if the file has read permissions
-if [ ! -r "$FILE" ]; then
-    echo "Error: Fisierul nu poate fi citit."
-    exit
-fi
+    if [ ! -r "$FILE" ]; then
+        echo "Error: File can't be read."
+        exit
+    fi
 
-# Check if the file is not empty
-if [ ! -s "$FILE" ]; then
-    echo "Error: Fisierul este gol."
-    exit
-fi
+    if [ ! -s "$FILE" ]; then
+        echo "Error: File is empty."
+        exit
+    fi
 }
 
 add_property() {
@@ -44,7 +40,7 @@ add_property() {
 	escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
     property="$2"
     property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
-    escaped_property=$(echo "$property" | sed 's/[\\&"]/\\&/g')
+    escaped_property=$(echo "$property_trimmed" | sed 's/[\\&"]/\\&/g')
     graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1 $escaped_property]/")
 }
 
@@ -67,9 +63,6 @@ add_child() {
 
 remove_metatags() {
     # $1 - elementul caruia ii stergem proprietatile ilegale
-    #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/[ \t]*$//')
-    #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/^[ \t]*//;s/[ \t]*$//')
-    #cleaned_element=$(echo "$1" | sed 's/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g' | sed 's/^[ \t]*//;s/[ \t]*$//')
     cleaned_element="$1"
     if echo "$1" | grep -q '\[[^]]*_self[^]]*\]'; then
         cleaned_element=$(echo "$cleaned_element" | sed 's/_self//g')
@@ -88,6 +81,9 @@ remove_metatags() {
 reconstruct_xml() {
     # local node="$1"
     # local indent="$2"
+    if [ "$called_by_build" = "true" ] && [ -z "$output_file" ]; then
+        echo -n "." > /dev/tty
+    fi
 
     node="$1"
     indent="$2"
@@ -168,98 +164,196 @@ reconstruct_xml() {
 }
 
 pre_process() {
-	#normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
-	#normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
     normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
     echo "$normalized_data"
 
 }
 
+parse_xml() {
+
+    file_checker "$input_file"
+
+    echo "" > /tmp/pre_processed_xml.tmp
+
+    echo ""
+    echo -n "Parsing"
+
+    pre_process "$input_file" > /tmp/pre_processed_xml.tmp
 
 
+    graph=""
+    stack=""
 
-input_file="$1"
+    serial="1"
 
-file_checker "$input_file"
-
-pre_process "$input_file" > /tmp/pre_processed_xml.tmp
-
-
-graph=""
-stack=""
-
-serial="1"
-
-while IFS= read -r line; do
-    fc=$(echo "$line" | cut -c1)
-    lc=$(echo "$line" | rev | cut -c1)
-    if [ "$fc" = "<" ]; then
-        tag_open="true"
-        element_open="true"
-    elif [ "$fc" = ">" ]; then
-        tag_open="false"
-    elif [ "$tag_open" = "true" ]; then # procesam numele tagului si atributele
-        if [ "$fc" = "/" ]; then
-            stack=$(echo "$stack" | sed 's/\(.*\) @.*$/\1/')
-            element_open="false"
-        else
-            #if [ "$fc" = "?" ]; then
-            #    is_processing="true"
-            #else
-                tagname=$(echo "$line" | sed 's/^\([^ \t]*\).*/\1/')
-                attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
-                if [ "$lc" = "/" ]; then
-                    attributes=$(echo "$attributes" | sed 's/\/$//')
-                    element="$tagname[_$serial _self $attributes]"
-                elif [ "$lc" = "?" ]; then
-                    tagname=$(echo "$tagname" | sed 's/^?//')
-                    attributes=$(echo "$attributes" | sed 's/?$//')
-                    element="$tagname[_$serial _question $attributes]"
-                else
-                    element="$tagname[_$serial $attributes]"
-                fi
-                temp=$(($serial + 1))
-                serial="$temp"
-                if [ -z "$graph" ]; then
-                    graph="$element:"
-                elif [ -n "$stack" ]; then
-                    parent=$(echo "$stack" | sed 's/.*@//')
-                    if [ -z "$parent" ]; then
-                        break
+    while IFS= read -r line; do
+        fc=$(echo "$line" | cut -c1)
+        lc=$(echo "$line" | rev | cut -c1)
+        if [ "$fc" = "<" ]; then
+            tag_open="true"
+            element_open="true"
+        elif [ "$fc" = ">" ]; then
+            tag_open="false"
+        elif [ "$tag_open" = "true" ]; then # procesam numele tagului si atributele
+            if [ "$fc" = "/" ]; then
+                stack=$(echo "$stack" | sed 's/\(.*\) @.*$/\1/')
+                element_open="false"
+            else
+                #if [ "$fc" = "?" ]; then
+                #    is_processing="true"
+                #else
+                    tagname=$(echo "$line" | sed 's/^\([^ \t]*\).*/\1/')
+                    attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
+                    if [ "$lc" = "/" ]; then
+                        attributes=$(echo "$attributes" | sed 's/\/$//')
+                        element="${tagname}[_$serial _self $attributes]"
+                    elif [ "$lc" = "?" ]; then
+                        tagname=$(echo "$tagname" | sed 's/^?//')
+                        attributes=$(echo "$attributes" | sed 's/?$//')
+                        element="${tagname}[_$serial _question $attributes]"
                     else
-                        add_child "$parent" "$element"
+                        element="${tagname}[_$serial $attributes]"
                     fi
-                else
-                    graph=$(echo "$graph"; echo "$element:")
+                    temp=$((serial + 1))
+                    serial="$temp"
+                    if [ -z "$graph" ]; then
+                        graph="$element:"
+                    elif [ -n "$stack" ]; then
+                        parent=$(echo "$stack" | sed 's/.*@//')
+                        if [ -z "$parent" ]; then
+                            break
+                        else
+                            add_child "$parent" "$element"
+                        fi
+                    else
+                        graph=$(echo "$graph"; echo "$element:")
+                    fi
+                    if [ "$lc" != "/" ] && [ "$lc" != "?" ]; then
+                        stack="$stack @$element"
+                    fi
                 fi
-                if [ "$lc" != "/" ] && [ "$lc" != "?" ]; then
-                    stack="$stack @$element"
-                fi
-            fi
-    elif [ "$element_open" = "true" ] && [ "$tag_open" = "false" ]; then
-         text="_text=\"$line\""
-         text=$(echo "$text" | sed -e 's/&amp;/\\\&/g' -e 's/&lt;/\\</g' -e 's/&gt;/\\>/g' -e 's/&quot;/\\\"/g' -e "s/&apos;/\\\'/g")
-         #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
-         add_property "$element" "$text"
-         #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
-    fi
-done < "/tmp/pre_processed_xml.tmp"
+        elif [ "$element_open" = "true" ] && [ "$tag_open" = "false" ]; then
+             text="_text=\"$line\""
+             text=$(echo "$text" | sed -e 's/&amp;/\\\&/g' -e 's/&lt;/\\</g' -e 's/&gt;/\\>/g' -e 's/&quot;/\\\"/g' -e "s/&apos;/\\\'/g")
+             #escaped_text=$(echo "$text" | sed 's/[][\\]/\\&/g')
+             add_property "$element" "$text"
+             #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
+        fi
+        echo -n "."
+    done < "/tmp/pre_processed_xml.tmp"
+    echo ""
+    echo "Done!"
+    echo ""
+    echo ""
+}
+
+build() {
+    echo "" > /tmp/reconstructed_xml.tmp
+    echo "" > /dev/tty
+    echo -n "Rebuilding graph" > /dev/tty
+    graph_numbered=$(echo "$graph" | nl -s ":" -n ln -w 1)
+    line_number="1"
+
+    func_stack=""
+    indent_stack=""
+
+    while echo "$graph_numbered" | grep -q "^$line_number"; do
+        last_child=""
+        root_child=$(echo "$graph_numbered" | grep "^$line_number:" | cut -d: -f2)
+        called_by_build="true"
+        reconstruct_xml "$root_child" "" >> /tmp/reconstructed_xml.tmp
+        escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
+        line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
+        temp=$((line_number + 1))
+        line_number="$temp"
+    done
+    echo "" > /dev/tty
+    echo "Done!" > /dev/tty
+    echo "" > /dev/tty
+    echo "" > /dev/tty
+    cat /tmp/reconstructed_xml.tmp
+    echo "" > /dev/tty
+    echo "" > /dev/tty
+}
+
+show_ascii_art() {
+
+echo "__   _____  ___ _     ______                        ";
+echo "\ \ / /|  \/  || |    | ___ \                       ";
+echo " \ V / | .  . || |    | |_/ /_ _ _ __ ___  ___ _ __ ";
+echo " /   \ | |\/| || |    |  __/ _\` | '__/ __|/ _ \ '__|";
+echo "/ /^\ \| |  | || |____| | | (_| | |  \__ \  __/ |   ";
+echo "\/   \/\_|  |_/\_____/\_|  \__,_|_|  |___/\___|_|   ";
+echo "                                                    ";
+echo "                                                    ";
+
+}
 
 
-printf "%s\n" "$graph"
+usage() {
+    echo "Usage: $0 [-h] [-g] [-b] [-q] [arg1] [arg2] ... [argN]"
+    echo "  -h        Show this help message"
+    echo "  -g        Show adjacency list"
+    echo "  arg1      Positional argument 1"
+    echo "  arg2      Positional argument 2"
+    exit 1
+}
 
-graph_numbered=$(echo "$graph" | nl -s ":" -n ln -w 1)
-line_number="1"
+input_file=""
+output_file=""
+quiet="false"
+help_shown="false"
+show_graph="false"
+called_by_build="false"
 
-func_stack=""
-indent_stack=""
-
-while echo "$graph_numbered" | grep -q "^$line_number"; do
-    last_child=""
-    root_child=$(echo "$graph_numbered" | grep "^$line_number:" | cut -d: -f2)
-    reconstruct_xml "$root_child" ""
-	escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
-    line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
-    temp=$(($line_number + 1))
-    line_number="$temp"
+while getopts ":qhgo:" opt; do
+    case "$opt" in
+        q)
+            quiet="true"
+            ;;
+        h)
+            help_shown="true"
+            show_ascii_art
+            usage
+            ;;
+        g)
+            show_graph="true"
+            ;;
+        o)
+            output_file="$OPTARG"
+            ;;
+        :)
+            echo "Error: Option -$OPTARG requires an argument."
+            usage
+            ;;
+        ?)
+            echo "Error: Invalid option -$OPTARG"
+            usage
+            ;;
+    esac
 done
+
+if [ "$help_shown" = "false" ] && [ "$quiet" = "false" ]; then
+    show_ascii_art
+fi
+
+shift $((OPTIND - 1))
+
+if [ $# -eq 0 ]; then
+    echo "No positional arguments provided."
+else
+    for arg in "$@"; do
+        input_file="$arg"
+        parse_xml
+        if [ "$show_graph" = "true" ]; then
+            printf "%s\n\n\n" "$graph"
+        fi
+        if [ -n "$output_file" ]; then
+            build > "$output_file"
+        else
+            build
+        fi
+    done
+fi
+
+echo "All done! :)"
