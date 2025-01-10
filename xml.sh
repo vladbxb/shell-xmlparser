@@ -7,22 +7,22 @@ file_checker()
     FILE="$1"
 
     if [ ! -e "$FILE" ]; then
-        echo "Error: File not found."
+        echo "Error: File not found." > /dev/tty
         exit
     fi
 
     if [ ! -f "$FILE" ]; then
-        echo "Error: Path is not a file."
+        echo "Error: Path is not a file." > /dev/tty
         exit
     fi
 
     if [ ! -r "$FILE" ]; then
-        echo "Error: File can't be read."
+        echo "Error: File can't be read." > /dev/tty
         exit
     fi
 
     if [ ! -s "$FILE" ]; then
-        echo "Error: File is empty."
+        echo "Error: File is empty." > /dev/tty
         exit
     fi
 }
@@ -82,7 +82,9 @@ reconstruct_xml() {
     # local node="$1"
     # local indent="$2"
     if [ "$called_by_build" = "true" ] && [ -z "$output_file" ]; then
-        echo -n "." > /dev/tty
+        if [ "$quiet" = "false" ]; then
+            echo -n "." > /dev/tty
+        fi
     fi
 
     node="$1"
@@ -175,8 +177,10 @@ parse_xml() {
 
     echo "" > /tmp/pre_processed_xml.tmp
 
-    echo ""
-    echo -n "Parsing"
+    if [ "$quiet" = "false" ]; then
+        echo "" > /dev/tty
+        echo -n "Parsing" > /dev/tty
+    fi
 
     pre_process "$input_file" > /tmp/pre_processed_xml.tmp
 
@@ -239,18 +243,24 @@ parse_xml() {
              add_property "$element" "$text"
              #graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1$escaped_text]/")
         fi
-        echo -n "."
+        if [ "$quiet" = "false" ]; then
+            echo -n "."
+        fi
     done < "/tmp/pre_processed_xml.tmp"
-    echo ""
-    echo "Done!"
-    echo ""
-    echo ""
+    if [ "$quiet" = "false" ]; then
+        echo "" > /dev/tty
+        echo "Done!" > /dev/tty
+        echo "" > /dev/tty
+        echo "" > /dev/tty
+    fi
 }
 
 build() {
     echo "" > /tmp/reconstructed_xml.tmp
-    echo "" > /dev/tty
-    echo -n "Rebuilding graph" > /dev/tty
+    if [ "$quiet" = "false" ]; then
+        echo "" > /dev/tty
+        echo -n "Rebuilding graph" > /dev/tty
+    fi
     graph_numbered=$(echo "$graph" | nl -s ":" -n ln -w 1)
     line_number="1"
 
@@ -267,36 +277,36 @@ build() {
         temp=$((line_number + 1))
         line_number="$temp"
     done
-    echo "" > /dev/tty
-    echo "Done!" > /dev/tty
-    echo "" > /dev/tty
-    echo "" > /dev/tty
+
+    if [ "$quiet" = "false" ]; then
+        echo "" > /dev/tty
+        echo "Done!" > /dev/tty
+        echo "" > /dev/tty
+        echo "" > /dev/tty
+    fi
     cat /tmp/reconstructed_xml.tmp
-    echo "" > /dev/tty
-    echo "" > /dev/tty
 }
 
 show_ascii_art() {
 
-echo "__   _____  ___ _     ______                        ";
-echo "\ \ / /|  \/  || |    | ___ \                       ";
-echo " \ V / | .  . || |    | |_/ /_ _ _ __ ___  ___ _ __ ";
-echo " /   \ | |\/| || |    |  __/ _\` | '__/ __|/ _ \ '__|";
-echo "/ /^\ \| |  | || |____| | | (_| | |  \__ \  __/ |   ";
-echo "\/   \/\_|  |_/\_____/\_|  \__,_|_|  |___/\___|_|   ";
-echo "                                                    ";
-echo "                                                    ";
+echo "__   _____  ___ _     ______                        " > /dev/tty
+echo "\ \ / /|  \/  || |    | ___ \                       " > /dev/tty
+echo " \ V / | .  . || |    | |_/ /_ _ _ __ ___  ___ _ __ " > /dev/tty
+echo " /   \ | |\/| || |    |  __/ _\` | '__/ __|/ _ \ '__|" > /dev/tty
+echo "/ /^\ \| |  | || |____| | | (_| | |  \__ \  __/ |   " > /dev/tty
+echo "\/   \/\_|  |_/\_____/\_|  \__,_|_|  |___/\___|_|   " > /dev/tty
+echo "                                                    " > /dev/tty
+echo "                                                    " > /dev/tty
 
 }
 
 
 usage() {
-    echo "Usage: $0 [-h] [-g] [-b] [-q] [arg1] [arg2] ... [argN]"
-    echo "  -h        Show this help message"
-    echo "  -g        Show adjacency list"
-    echo "  arg1      Positional argument 1"
-    echo "  arg2      Positional argument 2"
-    exit 1
+    echo "Usage: $0 [-q] [-h] [-g] [-o output_file] [xml_file1] [xml_file2] ... [xml_fileN]" > /dev/tty
+    echo "  -q                Prints only necessary output to console (quiet mode)" > /dev/tty
+    echo "  -h                Show this help message" > /dev/tty
+    echo "  -g                Show adjacency list" > /dev/tty
+    echo "  -o output_file    Choose an output file for the rebuilt XML file" > /dev/tty
 }
 
 input_file=""
@@ -323,12 +333,14 @@ while getopts ":qhgo:" opt; do
             output_file="$OPTARG"
             ;;
         :)
-            echo "Error: Option -$OPTARG requires an argument."
+            echo "Error: Option -$OPTARG requires an argument." > /dev/tty
             usage
+            exit 1
             ;;
         ?)
-            echo "Error: Invalid option -$OPTARG"
+            echo "Error: Invalid option -$OPTARG" > /dev/tty
             usage
+            exit 1
             ;;
     esac
 done
@@ -340,7 +352,7 @@ fi
 shift $((OPTIND - 1))
 
 if [ $# -eq 0 ]; then
-    echo "No positional arguments provided."
+    echo "No positional arguments provided." > /dev/tty
 else
     for arg in "$@"; do
         input_file="$arg"
@@ -356,4 +368,6 @@ else
     done
 fi
 
-echo "All done! :)"
+if [ "$quiet" = "false" ]; then
+    echo "All done! :)" > /dev/tty
+fi
