@@ -34,21 +34,32 @@ fi
 add_property() {
     # $1 - elementul in care sa adauge
     # $2 - proprietatea pe care sa o adauge ( proprietate + atribut (daca exista) )
-    local element="$1"
-	local escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
-    local property="$2"
-    local property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
-    local escaped_property=$(echo "$property" | sed 's/[\\&"]/\\&/g')
+    # local element="$1"
+	# local escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
+    # local property="$2"
+    # local property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
+    # local escaped_property=$(echo "$property" | sed 's/[\\&"]/\\&/g')
+    #
+    element="$1"
+	escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
+    property="$2"
+    property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
+    escaped_property=$(echo "$property" | sed 's/[\\&"]/\\&/g')
     graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1 $escaped_property]/")
 }
 
 add_child() {
     # $1 - tatal la care sa adauge
     # $2 - copilul pe care sa-l adauge
-    local parent="$1"
-    local element="$2"
-    local escaped_parent=$(echo "$parent" | sed 's/[][\\]/\\&/g')
-    local escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
+    # local parent="$1"
+    # local element="$2"
+    # local escaped_parent=$(echo "$parent" | sed 's/[][\\]/\\&/g')
+    # local escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
+
+    parent="$1"
+    element="$2"
+    escaped_parent=$(echo "$parent" | sed 's/[][\\]/\\&/g')
+    escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
     graph=$(echo "$graph" | sed "s/^$escaped_parent:.*/& $escaped_element/")
     graph=$(echo "$graph"; echo "$element:")
 }
@@ -69,57 +80,76 @@ remove_metatags() {
     cleaned_element=$(echo "$cleaned_element" | sed -E 's/_text=".*"/_text=""/g')
     cleaned_element=$(echo "$cleaned_element" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
 
-
     echo "$cleaned_element"
 }
 
 
 
 reconstruct_xml() {
-    local node="$1"
-    local indent="$2"
+    # local node="$1"
+    # local indent="$2"
+
+    node="$1"
+    indent="$2"
 
     if echo "$node" | grep -q ":"; then
-        local tagname=$(echo "$node" | cut -d: -f1)
+        # local tagname=$(echo "$node" | cut -d: -f1)
+        tagname=$(echo "$node" | cut -d: -f1)
     else
-        local tagname="$node"
+        # local tagname="$node"
+        tagname="$node"
     fi
 
 
-    local check_for_child="$node:"
+    # local check_for_child="$node:"
+    check_for_child="$node:"
     last_child="$tagname"
 
 
-	local escaped_check_for_child=$(echo "$check_for_child" | sed 's/[][\\]/\\&/g')
+	# local escaped_check_for_child=$(echo "$check_for_child" | sed 's/[][\\]/\\&/g')
+	escaped_check_for_child=$(echo "$check_for_child" | sed 's/[][\\]/\\&/g')
 
     if echo "$graph" | grep -q "^$escaped_check_for_child$"; then
-        local node_start=$(echo "$node" | grep -oP '^[^:]*')
-        #node_start=$(echo "$node_start" | sed 's/ _text="[^"]*"//; s/\[\]//; s/\[/ /; s/\]//')
+        # local node_start=$(echo "$node" | grep -oP '^[^:]*')
+        node_start=$(echo "$node" | grep -oP '^[^:]*')
         if echo "$node_start" | grep -q '\[[^]]*_self[^]]*\]'; then
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             printf "%s<%s/>\n" "$indent" "$node_start"
         elif echo "$node_start" | grep -q '\[[^]]*_question[^]]*\]'; then
-            echo "$node_start"
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             printf "%s<?%s?>\n" "$indent" "$node_start"
         else
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
-            local text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
+            # local text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
+            text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
             text_content=$(echo "$text_content" | sed 's/\\&/\&amp;/g; s/\\</\&lt;/g; s/\\>/\&gt;/g; s/\\"/\&quot;/g; s/\\'\''/\&apos;/g')
-            local node_end=$(echo "$node" | sed 's/\[.*//')
-            printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
+            # local node_end=$(echo "$node" | sed 's/\[.*//')
+            node_end=$(echo "$node" | sed 's/\[.*//')
+            indent=$(echo "$indent_stack" | sed 's/.*@//')
+            if [ -z "$indent_stack" ]; then
+                printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
+            else
+                printf "%s<%s>%s</%s>\n" "    $indent" "$node_start" "$text_content" "$node_end"
+            fi
         fi
     else
         if echo "$node" | grep -q ":"; then
-            local tagname=$(echo "$node" | cut -d: -f1)
+            # local tagname=$(echo "$node" | cut -d: -f1)
+            tagname=$(echo "$node" | cut -d: -f1)
         else
-            local tagname="$node"
+            # local tagname="$node"
+            tagname="$node"
         fi
+        func_stack="$func_stack @$node"
+        indent_stack="$indent_stack @$indent"
         tagname=$(remove_metatags "$tagname" | sed 's/\[\]//; s/\[/ /; s/\]//')
         printf "%s<%s>\n" "$indent" "$tagname"
-	    local escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
-        local check_for_children=$(echo "$graph" | grep "^$escaped_node:.*")
-        local children=$(echo "$check_for_children" | sed 's/^.*://')
+	    # local escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
+        # local check_for_children=$(echo "$graph" | grep "^$escaped_node:.*")
+        # local children=$(echo "$check_for_children" | sed 's/^.*://')
+	    escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
+        check_for_children=$(echo "$graph" | grep "^$escaped_node:.*")
+        children=$(echo "$check_for_children" | sed 's/^.*://')
         while echo "$children" | grep -qP '[^\s]+\[.*?\]'; do
             element=$(echo "$children" | grep -oP '[^\s]+\[.*?\]' | head -n1)
 
@@ -127,7 +157,12 @@ reconstruct_xml() {
 
             reconstruct_xml "$element" "    $indent"
         done
-        local node_end=$(echo "$node" | sed 's/\[.*//')
+        # local node_end=$(echo "$node" | sed 's/\[.*//')
+        node=$(echo "$func_stack" | sed 's/.*@//')
+        indent=$(echo "$indent_stack" | sed 's/.*@//')
+        func_stack=$(echo "$func_stack" | sed 's/\(.*\) @.*$/\1/')
+        indent_stack=$(echo "$indent_stack" | sed 's/\(.*\) @.*$/\1/')
+        node_end=$(echo "$node" | sed 's/\[.*//')
         printf "%s</%s>\n" "$indent" "$node_end"
     fi
 }
@@ -215,6 +250,9 @@ printf "%s\n" "$graph"
 
 graph_numbered=$(echo "$graph" | nl -s ":" -n ln -w 1)
 line_number="1"
+
+func_stack=""
+indent_stack=""
 
 while echo "$graph_numbered" | grep -q "^$line_number"; do
     last_child=""
