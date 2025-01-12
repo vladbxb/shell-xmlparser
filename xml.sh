@@ -8,22 +8,22 @@ file_checker()
 
     if [ ! -e "$FILE" ]; then
         echo "Error: File not found." > /dev/tty
-        exit
+        exit 1
     fi
 
     if [ ! -f "$FILE" ]; then
         echo "Error: Path is not a file." > /dev/tty
-        exit
+        exit 1
     fi
 
     if [ ! -r "$FILE" ]; then
         echo "Error: File can't be read." > /dev/tty
-        exit
+        exit 1
     fi
 
     if [ ! -s "$FILE" ]; then
         echo "Error: File is empty." > /dev/tty
-        exit
+        exit 1
     fi
 }
 
@@ -80,7 +80,6 @@ remove_metatags() {
 
 reconstruct_xml() {
     # local node="$1"
-    # local indent="$2"
     if [ "$called_by_build" = "true" ] && [ -z "$output_file" ]; then
         if [ "$quiet" = "false" ]; then
             echo -n "." > /dev/tty
@@ -88,7 +87,6 @@ reconstruct_xml() {
     fi
 
     node="$1"
-    indent="$2"
 
     if echo "$node" | grep -q ":"; then
         # local tagname=$(echo "$node" | cut -d: -f1)
@@ -112,10 +110,10 @@ reconstruct_xml() {
         node_start=$(echo "$node" | grep -oP '^[^:]*')
         if echo "$node_start" | grep -q '\[[^]]*_self[^]]*\]'; then
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
-            printf "%s<%s/>\n" "$indent" "$node_start"
+            printf "<%s/>\n" "$node_start"
         elif echo "$node_start" | grep -q '\[[^]]*_question[^]]*\]'; then
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
-            printf "%s<?%s?>\n" "$indent" "$node_start"
+            printf "<?%s?>\n" "$node_start"
         else
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             # local text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
@@ -123,12 +121,8 @@ reconstruct_xml() {
             text_content=$(echo "$text_content" | sed 's/\\&/\&amp;/g; s/\\</\&lt;/g; s/\\>/\&gt;/g; s/\\"/\&quot;/g; s/\\'\''/\&apos;/g')
             # local node_end=$(echo "$node" | sed 's/\[.*//')
             node_end=$(echo "$node" | sed 's/\[.*//')
-            indent=$(echo "$indent_stack" | sed 's/.*@//')
-            if [ -z "$indent_stack" ]; then
-                printf "%s<%s>%s</%s>\n" "$indent" "$node_start" "$text_content" "$node_end"
-            else
-                printf "%s<%s>%s</%s>\n" "    $indent" "$node_start" "$text_content" "$node_end"
-            fi
+            #indent=$(echo "$indent_stack" | sed 's/.*@//')
+            printf "<%s>%s</%s>\n" "$node_start" "$text_content" "$node_end"
         fi
     else
         if echo "$node" | grep -q ":"; then
@@ -139,9 +133,9 @@ reconstruct_xml() {
             tagname="$node"
         fi
         func_stack="$func_stack @$node"
-        indent_stack="$indent_stack @$indent"
+        #indent_stack="$indent_stack @$indent"
         tagname=$(remove_metatags "$tagname" | sed 's/\[\]//; s/\[/ /; s/\]//')
-        printf "%s<%s>\n" "$indent" "$tagname"
+        printf "<%s>\n" "$tagname"
 	    # local escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
         # local check_for_children=$(echo "$graph" | grep "^$escaped_node:.*")
         # local children=$(echo "$check_for_children" | sed 's/^.*://')
@@ -150,18 +144,26 @@ reconstruct_xml() {
         children=$(echo "$check_for_children" | sed 's/^.*://')
         while echo "$children" | grep -qP '[^\s]+\[.*?\]'; do
             element=$(echo "$children" | grep -oP '[^\s]+\[.*?\]' | head -n1)
+            element_stack="$element_stack @$element"
+            children_stack="$children_stack @$children"
+            #echo "children_stack: $children_stack" > /dev/tty
 
+
+            reconstruct_xml "$element"
+            children=$(echo "$children_stack" | sed 's/.* @//')
+            children_stack=$(echo "$children_stack" | sed 's/\(.*\) @.*$/\1/')
+            #echo "children_stack after pop: $children_stack" > /dev/tty
+            element=$(echo "$element_stack" | sed 's/.*@//')
+            element_stack=$(echo "$element_stack" | sed 's/\(.*\) @.*$/\1/')
             children=$(echo "$children" | sed "s/$(printf '%s' "$element" | sed 's/[][\&\/]/\\&/g')//" | sed 's/^ *//;s/ *$//')
-
-            reconstruct_xml "$element" "    $indent"
         done
         # local node_end=$(echo "$node" | sed 's/\[.*//')
         node=$(echo "$func_stack" | sed 's/.*@//')
-        indent=$(echo "$indent_stack" | sed 's/.*@//')
+        # indent=$(echo "$indent_stack" | sed 's/.*@//')
+        # indent_stack=$(echo "$indent_stack" | sed 's/\(.*\) @.*$/\1/')
         func_stack=$(echo "$func_stack" | sed 's/\(.*\) @.*$/\1/')
-        indent_stack=$(echo "$indent_stack" | sed 's/\(.*\) @.*$/\1/')
         node_end=$(echo "$node" | sed 's/\[.*//')
-        printf "%s</%s>\n" "$indent" "$node_end"
+        printf "</%s>\n" "$node_end"
     fi
 }
 
@@ -174,6 +176,10 @@ pre_process() {
 parse_xml() {
 
     file_checker "$input_file"
+
+    if [ "$?" = "1" ]; then
+        exit
+    fi
 
     echo "" > /tmp/pre_processed_xml.tmp
 
@@ -255,6 +261,34 @@ parse_xml() {
     fi
 }
 
+indent_xml_file() {
+    file_to_indent="$1"
+    depth=0
+
+    # Read the XML file line by line
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$called_by_build" = "true" ] && [ -z "$output_file" ]; then
+            if [ "$quiet" = "false" ]; then
+                echo -n "." > /dev/tty
+            fi
+        fi
+        trimmed_line=$(echo "$line" | sed 's/^[ \t]*//;s/[ \t]*$//')
+
+        [ -z "$trimmed_line" ] && continue
+
+        if echo "$trimmed_line" | grep -q '^</'; then
+            depth=$((depth - 1))
+        fi
+
+        printf "%s%s\n" "$(printf ' %.0s' $(seq 1 $((depth * 4))))" "$trimmed_line" | sed 's/^ //'
+
+        if echo "$trimmed_line" | grep -q '^<[^/!?][^>]*[^/]>$'; then
+            depth=$((depth + 1))
+        fi
+    done < "$file_to_indent"
+
+}
+
 build() {
     echo "" > /tmp/reconstructed_xml.tmp
     if [ "$quiet" = "false" ]; then
@@ -266,17 +300,20 @@ build() {
 
     func_stack=""
     indent_stack=""
+    children_stack=""
 
     while echo "$graph_numbered" | grep -q "^$line_number"; do
         last_child=""
         root_child=$(echo "$graph_numbered" | grep "^$line_number:" | cut -d: -f2)
         called_by_build="true"
-        reconstruct_xml "$root_child" "" >> /tmp/reconstructed_xml.tmp
+        reconstruct_xml "$root_child" >> /tmp/reconstructed_xml.tmp
         escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
         line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
         temp=$((line_number + 1))
         line_number="$temp"
     done
+
+    indent_xml_file "/tmp/reconstructed_xml.tmp" > /tmp/indented_xml.tmp
 
     if [ "$quiet" = "false" ]; then
         echo "" > /dev/tty
@@ -284,7 +321,7 @@ build() {
         echo "" > /dev/tty
         echo "" > /dev/tty
     fi
-    cat /tmp/reconstructed_xml.tmp
+    cat /tmp/indented_xml.tmp
 }
 
 show_ascii_art() {
