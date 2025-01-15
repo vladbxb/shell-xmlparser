@@ -212,7 +212,7 @@ parse_xml() {
                 #if [ "$fc" = "?" ]; then
                 #    is_processing="true"
                 #else
-                    tagname=$(echo "$line" | sed 's/^\([^ \t]*\).*/\1/')
+                    tagname=$(echo "$line" | sed 's/\/$//' | sed 's/^\([^ \t]*\).*/\1/')
                     attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
                     if [ "$lc" = "/" ]; then
                         attributes=$(echo "$attributes" | sed 's/\/$//')
