@@ -34,15 +34,15 @@ add_property() {
     ## adauga o proprietate la un element specificat in graf
     # $1 - elementul in care sa adauge
     # $2 - proprietatea pe care sa o adauge ( proprietate + atribut (daca exista) )
+    # dam escape la caracterele speciale, se sterg leading whitespaces din proprietate
+    # se da escape la caracterele speciale din proprietate si
+    # gaseste linia pe care este tatal, apoi adauga proprietatea inauntrul parantezelor
+    # patrate, separat de un spatiu
     element="$1"
-    # dam escape la caracterele speciale
-	escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
+    escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
     property="$2"
-    # sterge leading whitespaces din proprietate
     property_trimmed=$(echo "$property" | sed 's/^[ \t]*//')
-    # da escape la caracterele speciale din proprietate care pot interfera cu regex-ul
     escaped_property=$(echo "$property_trimmed" | sed 's/[\\&"]/\\&/g')
-    # gaseste linia pe care este tatal, apoi adauga proprietatea inauntrul parantezelor patrate, separat de un spatiu
     graph=$(echo "$graph" | sed "/$escaped_element/ s/\[\(.*\)\]/[\1 $escaped_property]/")
 }
 
@@ -50,15 +50,14 @@ add_child() {
     ## adauga un copil la un tata in graf
     # $1 - tatal la care sa adauge
     # $2 - copilul pe care sa-l adauge
-
+    # se da escape la caracterele care pot interfera cu regex-ul
+    # se cauta linia pe care este parintele, apoi se pune la finalul acelei linii un spatiu si copilul
+    # graf ul devine graf + element: pe urmatoarea linie (folosind ; cu 2 echo-uri simulam un newline)
     parent="$1"
     element="$2"
-    # se da escape la caracterele care pot interfera cu regex-ul
     escaped_parent=$(echo "$parent" | sed 's/[][\\]/\\&/g')
     escaped_element=$(echo "$element" | sed 's/[][\\]/\\&/g')
-    # se cauta linia pe care este parintele, apoi se pune la finalul acelei linii un spatiu si copilul
     graph=$(echo "$graph" | sed "s/^$escaped_parent:.*/& $escaped_element/")
-    # graf ul devine graf + element: pe urmatoarea linie (folosind ; cu 2 echo-uri simulam un newline)
     graph=$(echo "$graph"; echo "$element:")
 }
 
@@ -66,8 +65,8 @@ add_child() {
 remove_metatags() {
     ## sterge metatag-urile (atributele care incep cu _ , de care ne folosim ca sa stocam date suplimentare care n-ar trebui sa interfereze cu atributele normale)
     # $1 - elementul caruia ii stergem proprietatile ilegale
-    cleaned_element="$1"
     ## curatam elementul de proprietatile _self, care indica un tag self_closing si _question, care indica un tag de procesare xml
+    cleaned_element="$1"
     if echo "$1" | grep -q '\[[^]]*_self[^]]*\]'; then
         cleaned_element=$(echo "$cleaned_element" | sed 's/_self//g')
     fi
@@ -76,7 +75,6 @@ remove_metatags() {
     fi
     cleaned_element=$(echo "$cleaned_element" | sed -E 's/_text=".*"/_text=""/g')
     cleaned_element=$(echo "$cleaned_element" | sed 's/ _[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g; s/_[^ =]*\(\(="[^"]*"\)\?\)[ \t]*//g;s/\[ *\]/\[\]/g')
-
     echo "$cleaned_element"
 }
 
@@ -110,12 +108,13 @@ reconstruct_xml() {
 
     # se incepe extragerea informatiilor referitoare la nodul curent din graf
     # prima oara se verifica daca este frunza (daca exista o linie identica cu aceasta compusa din numele nodului si : la final)
+    # se reia totul pana la : intr-o variabila cu nume corespunzator(ca sa fie mai citibil)
+    # se verifica daca node_start contine metataguri apoi, se sterg acele metataguri cu functia remove_metatags
+    # in primele doua ramuri se proceseaza nodurile fara continut text intre tagul de inceput si cel de sfarsit
     if echo "$graph" | grep -q "^$escaped_check_for_child$"; then
-        # se reia totul pana la : intr-o variabila cu nume corespunzator(ca sa fie mai citibil)
+        
         node_start=$(echo "$node" | grep -oP '^[^:]*')
-        # se verifica daca node_start contine metataguri
-        # apoi, se sterg acele metataguri cu functia remove_metatags
-        # in primele doua ramuri se proceseaza nodurile fara continut text intre tagul de inceput si cel de sfarsit
+        
         if echo "$node_start" | grep -q '\[[^]]*_self[^]]*\]'; then
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
             printf "<%s/>\n" "$node_start"
@@ -124,14 +123,12 @@ reconstruct_xml() {
             printf "<?%s?>\n" "$node_start"
         else
             # tagul de inceput va contine atribute. noi trebuie sa stergem ] si sa punem spatiu in loc de [ ca sa reformatam continutul cu ce presupune standardul xml
+	    # apoi se preia continutul text dintre tagul de inceput si de sfarsit din atributul meta proprietatii _text (ce este intre ghilimele).
+     	    # se convertesc caracterele speciale in variantele lor escaped. asa sunt stocate in graf
+	    # tagul de sfarsit este doar numele tagului fara partea de atribute
             node_start=$(remove_metatags "$node_start" | sed 's/\[\]//; s/\[/ /; s/\]//')
-            
-            # apoi se preia continutul text dintre tagul de inceput si de sfarsit din atributul meta proprietatii _text (ce este intre ghilimele).
             text_content=$(echo "$node" | grep -o '_text=".*"' | sed -E 's/_text="(.*)"/\1/')
-
-            # se convertesc caracterele speciale in variantele lor escaped. asa sunt stocate in graf
             text_content=$(echo "$text_content" | sed 's/\\&/\&amp;/g; s/\\</\&lt;/g; s/\\>/\&gt;/g; s/\\"/\&quot;/g; s/\\'\''/\&apos;/g')
-            # tagul de sfarsit este doar numele tagului fara partea de atribute
             node_end=$(echo "$node" | sed 's/\[.*//')
             printf "<%s>%s</%s>\n" "$node_start" "$text_content" "$node_end"
         fi
@@ -142,53 +139,54 @@ reconstruct_xml() {
         else
             tagname="$node"
         fi
-        ## cazul unui tag imbricat
+        ## cazul unui tag imbricat (nested)
         # se initializeaza / se da push pe stiva func_stack care tine evidenta de nodurile deschise
+	# se aduce tagname ul in forma unui tag de deschidere
+ 	# apoi se afiseaza doar el (urmatorul continut fiind imbricat in el)
+  	# se da escape la caracterele speciale, se verifica daca nodul respectiv are o linie in care sunt precizati copii (descendenti directi)
+   	# copii sunt preluati prin stergerea a tuturor caracterelor pana la : (astfel ramane doar ce este dupa : )
         func_stack="$func_stack @$node"
-        # se aduce tagname ul in forma unui tag de deschidere
         tagname=$(remove_metatags "$tagname" | sed 's/\[\]//; s/\[/ /; s/\]//')
-        # apoi se afiseaza doar el (urmatorul continut fiind imbricat in el)
         printf "<%s>\n" "$tagname"
-        # se da escape la caracterele speciale
-	    escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
-        # se verifica daca nodul respectiv are o linie in care sunt precizati copii (descendenti directi)
+	escaped_node=$(echo "$node" | sed 's/[][\\]/\\&/g')
         check_for_children=$(echo "$graph" | grep "^$escaped_node:.*")
-        # copii sunt preluati prin stergerea a tuturor caracterelor pana la : (astfel ramane doar ce este dupa : )
         children=$(echo "$check_for_children" | sed 's/^.*://')
         # iteram prin fiecare copil (sunt de fapt pusi intr-o lista, asemanator ca stivele de mai sus)
+	# se separa copiii pe linii apoi se preia primul copil din lista
+ 	# se da push la copilul curent pe stiva de elemente
+  	# se da push la lista de copii pe stiva de copii
         while echo "$children" | grep -qP '[^\s]+\[.*?\]'; do
-            # se separa copiii pe linii apoi se preia primul copil din lista
             element=$(echo "$children" | grep -oP '[^\s]+\[.*?\]' | head -n1)
-            # se da push la copilul curent pe stiva de elemente
             element_stack="$element_stack @$element"
-            # se da push la lista de copii pe stiva de copii
             children_stack="$children_stack @$children"
-
-            # apoi se face apel recursiv al functiei. in momentul intoarcerii din apeluri, functia se va folosi de stivele auxiliare pentru a retine copiii precedenti, elementul la care se afla atunci, etc. facem acest lucru din cauza ca nu putem avea variabile globale (ksh nu ar fi mers, variabilele locale nu sunt in standardul POSIX)
+            # apoi se face apel recursiv al functiei. in momentul intoarcerii din apeluri, 
+	    # functia se va folosi de stivele auxiliare pentru a retine copiii precedenti, elementul la care se afla atunci,
+     	    # etc. facem acest lucru din cauza ca nu putem avea variabile globale (ksh nu ar fi mers, variabilele locale nu sunt in standardul POSIX)
+	    # se preia ultima lista de copii, apoi se da pop la stiva de liste de copii, asemenea la elementul curent  si la stiva de elemente
+     	    # apoi se da pop la copilul care abia a fost procesat
             reconstruct_xml "$element"
-            # se preia ultima lista de copii
             children=$(echo "$children_stack" | sed 's/.* @//')
-            # apoi se da pop la stiva de liste de copii
             children_stack=$(echo "$children_stack" | sed 's/\(.*\) @.*$/\1/')
-            # asemenea la elementul curent  si la stiva de elemente
             element=$(echo "$element_stack" | sed 's/.*@//')
             element_stack=$(echo "$element_stack" | sed 's/\(.*\) @.*$/\1/')
-            # apoi se da pop la copilul care abia a fost procesat
             children=$(echo "$children" | sed "s/$(printf '%s' "$element" | sed 's/[][\&\/]/\\&/g')//" | sed 's/^ *//;s/ *$//')
         done
         # se preia ultimul element din stiva de noduri
+	# se da pop la stiva de noduri
+ 	# apoi este procesat tagul de sfarsit cu tehnica de mai sus
+  	# e afisat pe o singura linie acesta (s-a terminat imbricarea)
         node=$(echo "$func_stack" | sed 's/.*@//')
-        # se da pop la stiva de noduri
         func_stack=$(echo "$func_stack" | sed 's/\(.*\) @.*$/\1/')
-        # apoi este procesat tagul de sfarsit cu tehnica de mai sus
         node_end=$(echo "$node" | sed 's/\[.*//')
-        # e afisat pe o singura linie acesta (s-a terminat imbricarea)
         printf "</%s>\n" "$node_end"
     fi
 }
 
 pre_process() {
-    # pre-procesarea fisierului consta in eliminarea indentarilor de pe fiecare rand, stergerea newline-urilor (tragerea a tuturor liniilor pe una singura), eliminarea existentei comentariilor (asemanator cu ce fac alte parsere de xml, de exemplu xmllint sau xmlstarlet), plasarea unui newline inainte si dupa fiecare < sau > pentru a simula cel mai dificil caz, apoi stergerea randurilor goale. acesta este un fisier normalizat
+    # pre-procesarea fisierului consta in eliminarea indentarilor de pe fiecare rand, stergerea newline-urilor
+    # (tragerea a tuturor liniilor pe una singura), eliminarea existentei comentariilor (asemanator cu ce fac alte parsere de xml,
+    # de exemplu xmllint sau xmlstarlet), plasarea unui newline inainte si dupa fiecare < sau > pentru a simula cel mai dificil caz, 
+    # apoi stergerea randurilor goale. acesta este un fisier normalizat
     normalized_data=$(sed 's/^[ \t]*//;s/[ \t]*$//' "$1" | tr '\n' ' ' | sed 's/>[ ]*</></g'| sed 's/<!--[^>]*-->//g' | sed -e 's/>/&\n/g' -e 's/>/\n&/g' -e 's/</\n&/g' -e 's/</&\n/g' | sed '/^$/d')
     echo "$normalized_data"
 
@@ -249,18 +247,17 @@ parse_xml() {
                 tagname=$(echo "$line" | sed 's/\/$//' | sed 's/^\([^ \t]*\).*/\1/')
                 attributes=$(echo "$line" | sed "s/$tagname//" | sed 's/[ \t]*$//')
                 # detectie tag de tip self closing (ex: <br/> din html)
+		# / de la final este sters
+  		# este adaugat metatag-ul _self pentru a tine evidenta de aceasta proprietate importanta pentru reconstruire
                 if [ "$lc" = "/" ]; then
-                    # / de la final este sters
                     attributes=$(echo "$attributes" | sed 's/\/$//')
-                    # este adaugat metatag-ul _self pentru a tine evidenta de aceasta proprietate importanta pentru reconstruire
                     element="${tagname}[_$serial _self $attributes]"
-                    # detectie taguri de procesare xml
+                    # detectie taguri de procesare xml (tip special de taguri)
                 elif [ "$lc" = "?" ]; then
-                    # se sterge ? din tagname ( a fost preluat anterior )
+                    # se sterge ? din tagname ( a fost preluat anterior ), se sterge si ultimul ? din atribute
+		    # si se adauga metatag-ul _question pe acelasi principiu
                     tagname=$(echo "$tagname" | sed 's/^?//')
-                    # se sterge si ultimul ? din atribute
                     attributes=$(echo "$attributes" | sed 's/?$//')
-                    # si se adauga metatag-ul _question pe acelasi principiu
                     element="${tagname}[_$serial _question $attributes]"
                 else
                     # altfel, este adaugat doar serialul
@@ -272,32 +269,28 @@ parse_xml() {
                 # initializam graful
                 if [ -z "$graph" ]; then
                     graph="$element:"
-                # altfel, punem in variabila parent tatal
                 elif [ -n "$stack" ]; then
                     parent=$(echo "$stack" | sed 's/.*@//')
-                    # dar daca acesta nu exista, sarim peste
                     if [ -z "$parent" ]; then
                         break
                     else
-                        # daca exista, adaugam elementul gasit la tata in graf
                         add_child "$parent" "$element"
                     fi
                 else
-                    #altfel, punem elementul curent pe urmatoarea linie in graf, devenind posibil tata (sau frunza)
+                    # se pune elementul curent pe urmatoarea linie in graf, devenind posibil tata (sau frunza)
                     graph=$(echo "$graph"; echo "$element:")
                 fi
-                # daca elementul este self closing sau tag de procesare, nu are rost sa-l bagam pe stiva, deoarece incepe si se termina pe un singur rand.
+                # daca elementul este self closing sau tag de procesare, nu are rost sa fie adaugat pe stiva, deoarece incepe si se termina pe un singur rand.
                 if [ "$lc" != "/" ] && [ "$lc" != "?" ]; then
                     stack="$stack @$element"
                 fi
             fi
             # procesare continut text din element
         elif [ "$element_open" = "true" ] && [ "$tag_open" = "false" ]; then
-            # acesta pur si simplu o sa fie pe o linie separata si ne usureaza munca considerabil de mult
             text="_text=\"$line\""
             # se insereaza caracterele speciale in graf ca realmente acestea dar escaped
+	    # se adauga metatag-ul text pentru continutul text din tag
             text=$(echo "$text" | sed -e 's/&amp;/\\\&/g' -e 's/&lt;/\\</g' -e 's/&gt;/\\>/g' -e 's/&quot;/\\\"/g' -e "s/&apos;/\\\'/g")
-            # se adauga metatag-ul text
             add_property "$element" "$text"
         fi
         # eye candy
@@ -372,15 +365,14 @@ build() {
         # alta variabila auxiliara care tine ultimul copil traversat
         last_child=""
         # se preia primul copil al "radacinei" (de pe cel mai mic nivel)
+	# si se construieste structura sa imbricata sau neimbricata
         root_child=$(echo "$graph_numbered" | grep "^$line_number:" | cut -d: -f2)
         called_by_build="true"
-        # si se construieste structura sa imbricata sau neimbricata
         reconstruct_xml "$root_child" >> /tmp/reconstructed_xml.tmp
-        # este retinut ultimul copil, apoi
         escaped_last_child=$(echo "$last_child" | sed 's/[][\\]/\\&/g')
-        # este cautat in graful liniat amplasarea acestuia
+        # este cautat in graful liniat amplasarea copilului
         line_number=$(echo "$graph_numbered" | grep "$escaped_last_child:$" | cut -d: -f1)
-        # in functie de linia gasita, se cauta pe urmatoarea linie (nu este necesar, dar la un moment dat ne ajuta sa prevenim erori)
+        # in functie de linia gasita, se cauta pe urmatoarea linie (nu este necesar, dar este aici pentru compat.)
         temp=$((line_number + 1))
         line_number="$temp"
     done
@@ -430,7 +422,8 @@ help_shown="false"
 show_graph="false"
 called_by_build="false"
 
-## se foloseste getopts pentru a parcurge intr-un mod standard POSIX toate switch-urile si argumentele pozitionale pasate. aceasta implementare urmeaza Ghidul de Sintaxa pentru Argumente Utilitare POSIX.
+## se foloseste getopts pentru a parcurge intr-un mod standard POSIX toate switch-urile si argumentele pozitionale pasate. 
+# aceasta implementare urmeaza Ghidul de Sintaxa pentru Argumente Utilitare POSIX.
 while getopts ":qhgo:" opt; do
     case "$opt" in
         # pentru parametrul quiet, suprimam output-ul care nu este necesar (eye candy). functionalitate utila pentru piping
